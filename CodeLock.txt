@@ -1,0 +1,202 @@
+`timescale 1ns / 1ps
+//////////////////////////////////////////////////////////////////////////////////
+// Project Name: Electronic Code Lock
+// Engineer: EricBX
+// Finish Date:    16:40 04/16/2017 
+// Module Name:    CodeLock 
+/////////////////////////////////////////////////////////////////////////////////
+ 
+module CodeLock(
+  input wire [7:0] Code,//8位密码
+  input btn_input,//触发_btn
+  input clk,
+  input btn_reset,//清零复位_btn
+  input btn_four,//四位密码模式_btn
+  input btn_remind,//在8-bits模式下，按下会在LED显示所设置的密码
+  output [3:0] an,//数码管使能
+  output [6:0] a_to_g,//数码管
+  output [7:0] led//led(for reminding)
+    );
+reg [7:0] preCode;//存储预设密码
+wire check;//判断8位结果
+wire check_4;//判断4位结果
+reg [4:0] NUM;//数码管显示内容
+reg [1:0] MODE;//数码管显示模式 0：reset 1：input and check 2：four_preCode_four_inPut_model
+reg [31:0] clk_cnt;//clk计数计时
+wire [1:0] an_choice;//=0123控制不同数码管显示
+
+//LED design
+//assign led[7:0] = Code[7:0];//显示SW状态//only for test
+assign led[7] = preCode[7] && btn_remind && (MODE!=2);
+assign led[6] = preCode[6] && btn_remind && (MODE!=2);
+assign led[5] = preCode[5] && btn_remind && (MODE!=2);
+assign led[4] = preCode[4] && btn_remind && (MODE!=2);
+assign led[3] = (preCode[3] && btn_remind && (MODE!=2))||(Code[7] && btn_remind && (MODE==2));
+assign led[2] = (preCode[2] && btn_remind && (MODE!=2))||(Code[6] && btn_remind && (MODE==2));
+assign led[1] = (preCode[1] && btn_remind && (MODE!=2))||(Code[5] && btn_remind && (MODE==2));
+assign led[0] = (preCode[0] && btn_remind && (MODE!=2))||(Code[4] && btn_remind && (MODE==2));
+//存储预设的Code，按下brn3会在LED显示预设的Code，从而避免忘记所设的密码
+//（便于测试，实际应用中不会设置）//for test
+
+//实时检查密码正误
+assign check = Code[7:0] == preCode[7:0];
+assign check_4 = Code[3:0] == Code[7:4];
+//设置每一个clk的活动
+always @(posedge clk )
+  begin
+    clk_cnt = clk_cnt +1;                     //if clock flip, count clock 
+	 if(clk_cnt[31:28]>15)                    //if count was full, back to zero
+		clk_cnt = 0;
+    if(MODE==1)//(8-bits)input and check
+      begin
+		  if(btn_reset==1)
+		    MODE=0;
+		  if(btn_four==1)
+		    MODE=2;
+		  if(clk_cnt[26]==1 && clk_cnt[25]==0)//先显示高四位
+		    case(an_choice)
+			   0:NUM=Code[4];
+		      1:NUM=Code[5];
+			   2:NUM=Code[6];
+			   3:NUM=Code[7];
+			   default:NUM="-";//-
+			 endcase
+		  else if(clk_cnt[26]==1 && clk_cnt[25]==1)//再显示低四位
+		    case(an_choice)
+			   0:NUM=Code[0];
+		      1:NUM=Code[1];
+			   2:NUM=Code[2];
+			   3:NUM=Code[3];
+			   default:NUM="-";//-
+			 endcase
+			else if(check==1)					//判正
+			  case(an_choice)
+			    0:NUM='hE;//E
+			    1:NUM='b10011;//U
+			    2:NUM='hA;//R
+			    3:NUM='b10100;//T
+			    default:NUM="-";//-
+			  endcase
+			else									//判误
+			  case(an_choice)
+				 0:NUM='b10110;//S
+				 1:NUM='b10101;//L
+				 2:NUM='hA;//A
+				 3:NUM='hF;//F
+				 default:NUM="-";//-
+			  endcase
+		end
+	 else if(MODE==2)//(4-bits)
+      begin
+		  if(btn_reset==1)
+		    MODE=0;
+		  if(btn_input==1)
+		    MODE=1;
+		  if(clk_cnt[25]==0)//先显示高四位
+		    case(an_choice)
+			   0:NUM=Code[0];
+		       1:NUM=Code[1];
+			   2:NUM=Code[2];
+			   3:NUM=Code[3];
+			   default:NUM="-";//-
+			 endcase
+			else if(check_4==1)					//判正
+			  case(an_choice)
+			    0:NUM='hE;//E
+			    1:NUM='b10011;//U
+			    2:NUM='hA;//R
+			    3:NUM='b10100;//T
+			    default:NUM="-";//-
+			  endcase
+			else									//判误
+			  case(an_choice)
+				 0:NUM='b10110;//S
+				 1:NUM='b10101;//L
+				 2:NUM='hA;//A
+				 3:NUM='hF;//F
+				 default:NUM="-";//-
+			  endcase
+		end	
+    else			//(8-bits)reset the code
+	   begin
+		  if(btn_input==1)
+		    MODE=1;
+		  if(btn_four==1)
+		    MODE=2;
+		  preCode[7:0] = Code[7:0];//存预设code
+		  if(clk_cnt[26]==1 && clk_cnt[25]==0)//先显示高四位
+		    case(an_choice)
+			   0:NUM=Code[4];
+		       1:NUM=Code[5];
+			   2:NUM=Code[6];
+			   3:NUM=Code[7];
+			   default:NUM="-";//-
+			 endcase
+		  else if(clk_cnt[26]==1 && clk_cnt[25]==1)//再显示低四位
+		    case(an_choice)
+			   0:NUM=Code[0];
+		       1:NUM=Code[1];
+			   2:NUM=Code[2];
+			   3:NUM=Code[3];
+			   default:NUM="-";//-
+			 endcase
+		  else									//显示"（input）CODE"模式
+          case(an_choice)
+			   0:NUM='hE;//E
+			   1:NUM='hD;//D
+			   2:NUM=0;//O
+			   3:NUM='hC;//C
+			   default:NUM="-";//-
+			 endcase		  
+		end
+  end
+  
+//选择数码管
+assign an_choice = clk_cnt[15:14];//利用视觉暂留，同步显示四个数码管
+assign an[3] = (~(an_choice==2'b00));
+assign an[2] = (~(an_choice==2'b01));
+assign an[1] = (~(an_choice==2'b10));
+assign an[0] = (~(an_choice==2'b11));//牢记要取反!!
+
+  
+CodeLock_sub A1(.NUM(NUM),
+                .a_to_g(a_to_g));                //call the sub display module
+  
+endmodule
+
+//枚举数码管功能并显示
+module CodeLock_sub(
+ input [4:0]NUM,
+ output reg[6:0]a_to_g
+    );
+
+always @(*) 
+case(NUM)
+0:a_to_g=7'b0000001;
+1:a_to_g=7'b1001111;//I
+2:a_to_g=7'b0010010;
+3:a_to_g=7'b0000110;
+4:a_to_g=7'b1001100;
+5:a_to_g=7'b0100100;
+6:a_to_g=7'b0100000;
+7:a_to_g=7'b0001111;
+8:a_to_g=7'b0000000;
+9:a_to_g=7'b0000100;
+'hA: a_to_g=7'b0001000;//A//R
+'hB: a_to_g=7'b1100000;
+'hC: a_to_g=7'b0110001;
+'hD: a_to_g=7'b1000010;
+'hE: a_to_g=7'b0110000;//E
+'hF: a_to_g=7'b0111000;//F
+//以下是符号拓展
+//'b10001: a_to_g=7'b0001001;//N
+//'b10010: a_to_g=7'b0011000;//P
+'b10011: a_to_g=7'b1000001;//U
+'b10100: a_to_g=7'b0001111;//T
+'b10101: a_to_g=7'b1110001;//L
+'b10110: a_to_g=7'b0100100;//S
+default: a_to_g=7'b1111110;//- 
+endcase 
+
+endmodule
+
